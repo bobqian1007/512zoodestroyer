@@ -2,3 +2,4 @@
 **/*.class
 **/zookeeper_audit.log
 .idea
+**/.DS_Store
