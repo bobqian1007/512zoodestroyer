@@ -81,7 +81,7 @@ public class DistProcess implements Watcher
 		{
 			zk.create("/dist07/workers/worker-", pinfo.getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL_SEQUENTIAL);
 		}catch(NoNodeException nne){
-			zk.create("/dist07/workers", "", Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT_SEQUENTIAL);
+			zk.create("/dist07/workers", new byte[3], Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT_SEQUENTIAL);
 			zk.create("/dist07/workers/worker-", pinfo.getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL_SEQUENTIAL);
 		}
 	}
