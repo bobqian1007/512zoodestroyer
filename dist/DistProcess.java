@@ -98,7 +98,7 @@ public class DistProcess implements Watcher
 					zk.getData("/dist07/tasks/"+c, false, taskDataCallback,c);
 					
 					// Store it inside the result node.
-					zk.create(name.replace("workers", "assigns"), pinfo.getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT_SEQUENTIAL);
+					zk.create(name.replace("assign", "workers"), pinfo.getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT_SEQUENTIAL);
 					zk.delete(path,-1,null,null);
 					//zk.create("/distXX/tasks/"+c+"/result", ("Hello from "+pinfo).getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
 				}
@@ -144,7 +144,7 @@ public class DistProcess implements Watcher
 		zk.create("/dist07", new byte[0], Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
 		zk.create("/dist07/tasks", new byte[0], Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
 		zk.create("/dist07/workers", new byte[0], Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
-		zk.create("/dist07/assigns", new byte[0], Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+		zk.create("/dist07/assign", new byte[0], Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
 		zk.create("/dist07/master", pinfo.getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
 	}
 
@@ -152,8 +152,8 @@ public class DistProcess implements Watcher
 	{
 		//Try to create an ephemeral node to be the master, put the hostname and pid of this process as the data.
 		// This is an example of Synchronous API invocation as the function waits for the execution and no callback is involved..
-			this.name = zk.create("/dist07/assigns/worker-", pinfo.getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT_SEQUENTIAL);
-			zk.create(this.name.replace("workers", "assigns"), pinfo.getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT_SEQUENTIAL);
+			this.name = zk.create("/dist07/assign/worker-", pinfo.getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT_SEQUENTIAL);
+			zk.create(this.name.replace("assign", "workers"), pinfo.getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT_SEQUENTIAL);
 	}
 	
 	@Override
@@ -211,7 +211,7 @@ public class DistProcess implements Watcher
 				
 
 				// Store it inside the result node.
-				zk.create("/dist07/assigns/"+worker, c, Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+				zk.create("/dist07/assign/"+worker, c, Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
 				//zk.create("/distXX/tasks/"+c+"/result", ("Hello from "+pinfo).getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
 			}
 			catch(NodeExistsException nee){System.out.println(nee);}
@@ -291,13 +291,13 @@ public class DistProcess implements Watcher
 		Thread.sleep(10000);
 		if(dt.isMaster){
 			dt.zk.delete("/dist07/master", -1, null, null);
-			dt.zk.delete("/dist07/assigns",-1,null,null);
+			dt.zk.delete("/dist07/assign",-1,null,null);
 			dt.zk.delete("/dist07/workers",-1,null,null);
 			dt.zk.delete("/dist07/tasks",-1,null,null);
 			dt.zk.delete("/dist07",-1,null,null);
 		}else{
 			dt.zk.delete(dt.name, -1, null, null);
-			dt.zk.delete(dt.name.replace("workers", "assigns"), -1, null, null);
+			dt.zk.delete(dt.name.replace("assign", "workers"), -1, null, null);
 		}
 		dt.zk.close();
 	}
