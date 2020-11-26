@@ -32,7 +32,7 @@ public class DistProcess implements Watcher
 	ZooKeeper zk;
 	String zkServer, pinfo;
 	boolean isMaster=false;
-
+	String name;
 	DistProcess(String zkhost)
 	{
 		zkServer=zkhost;
@@ -47,43 +47,103 @@ public class DistProcess implements Watcher
 		try
 		{
 			runForMaster();	// See if you can become the master (i.e, no other master exists)
-			isMaster=true;
+			this.isMaster=true;
 			getTasks(); // Install monitoring on any new tasks that will be created.
 									// TODO monitor for worker tasks?
 		}catch(NodeExistsException nee)
 		{ 
 			runForWorker();
-			isMaster=false; 
+			this.isMaster=false; 
+			getAssignedTask()
 			
 		} // TODO: What else will you need if this was a worker process?
 
 		System.out.println("DISTAPP : Role : " + " I will be functioning as " +(isMaster?"master":"worker"));
 	}
-
+	Watcher newAssignedTaskWatcher = new Watcher(){
+        public void process(WatchedEvent e) {
+            if(e.getType() == EventType.NodeChildrenChanged) {
+                assert new String(this.name).equals( e.getPath() );
+                
+                getAssignedTask();
+            }
+        }
+    };
 	// Master fetching task znodes...
 	void getTasks()
 	{
 		zk.getChildren("/dist07/tasks", this, this, null);  
 	}
+	void getAssignedTask()
+	{
+		zk.getChildren(this.name,newAssignedTaskWatcher, tasksGetChildrenCallback, null);  
+	}
+	ChildrenCallback tasksGetChildrenCallback = new ChildrenCallback() {
+        public void processResult(int rc, String path, Object ctx, List<String> children){
+			System.out.println("DISTAPP : processResult : " + rc + ":" + path + ":" + ctx);
+			for(String c: children)
+			{
+				System.out.println(c);
+				try
+				{
+					//TODO There is quite a bit of worker specific activities here,
+					// that should be moved done by a process function as the worker.
 
+					//TODO!! This is not a good approach, you should get the data using an async version of the API.
+					zk.getData("/dist07/tasks/"+c, false, null);
+					
+					// Store it inside the result node.
+					zk.create("/dist07/tasks/"+c+"/result", taskSerial, Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+					zk.create(this.name.replace("workers", "assigns"), pinfo.getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT_SEQUENTIAL);
+					dt.zk.delete(path,-1,null,null);
+					//zk.create("/distXX/tasks/"+c+"/result", ("Hello from "+pinfo).getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+				}
+				catch(NodeExistsException nee){System.out.println(nee);}
+				catch(KeeperException ke){System.out.println(ke);}
+				catch(InterruptedException ie){System.out.println(ie);}
+				catch(IOException io){System.out.println(io);}
+				catch(ClassNotFoundException cne){System.out.println(cne);}
+			}
+		}
+	}
+	DataCallback taskDataCallback = new DataCallback() {
+        public void processResult(int rc, String path, Object ctx, byte[] data, Stat stat){
+			ByteArrayInputStream bis = new ByteArrayInputStream(data);
+			ObjectInput in = new ObjectInputStream(bis);
+			DistTask dt = (DistTask) in.readObject();
+
+				//Execute the task.
+				//TODO: Again, time consuming stuff. Should be done by some other thread and not inside a callback!
+			dt.compute();
+				
+				// Serialize our Task object back to a byte array!
+			ByteArrayOutputStream bos = new ByteArrayOutputStream();
+			ObjectOutputStream oos = new ObjectOutputStream(bos);
+			oos.writeObject(dt); oos.flush();
+			taskSerial = bos.toByteArray();
+
+				// Store it inside the result node.
+			zk.create(path+"/result", taskSerial, Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+		}
+	}
+			
 	// Try to become the master.
 	void runForMaster() throws UnknownHostException, KeeperException, InterruptedException
 	{
 		//Try to create an ephemeral node to be the master, put the hostname and pid of this process as the data.
 		// This is an example of Synchronous API invocation as the function waits for the execution and no callback is involved..
+		zk.create("/dist07", new byte[0], Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+		zk.create("/dist07/tasks", new byte[0], Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+		zk.create("/dist07/workers", new byte[0], Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+		zk.create("/dist07/assigns", new byte[0], Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
 		zk.create("/dist07/master", pinfo.getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
 	}
 	void runForWorker() throws UnknownHostException, KeeperException, InterruptedException
 	{
 		//Try to create an ephemeral node to be the master, put the hostname and pid of this process as the data.
 		// This is an example of Synchronous API invocation as the function waits for the execution and no callback is involved..
-		try
-		{
-			zk.create("/dist07/workers/worker-", pinfo.getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL_SEQUENTIAL);
-		}catch(NoNodeException nne){
-			zk.create("/dist07/workers", new byte[3], Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT_SEQUENTIAL);
-			zk.create("/dist07/workers/worker-", pinfo.getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL_SEQUENTIAL);
-		}
+			this.name = zk.create("/dist07/assigns/worker-", pinfo.getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT_SEQUENTIAL);
+			zk.create(this.name.replace("workers", "assigns"), pinfo.getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT_SEQUENTIAL);
 	}
 	
 
@@ -108,7 +168,47 @@ public class DistProcess implements Watcher
 			getTasks();
 		}
 	}
+	public void processResult(int rc, String path, Object ctx, List<String> children)
+	{
 
+		//!! IMPORTANT !!
+		// Do not perform any time consuming/waiting steps here
+		//	including in other functions called from here.
+		// 	Your will be essentially holding up ZK client library 
+		//	thread and you will not get other notifications.
+		//	Instead include another thread in your program logic that
+		//   does the time consuming "work" and notify that thread from here.
+
+		// This logic is for master !!
+		//Every time a new task znode is created by the client, this will be invoked.
+
+		// TODO: Filter out and go over only the newly created task znodes.
+		//		Also have a mechanism to assign these tasks to a "Worker" process.
+		//		The worker must invoke the "compute" function of the Task send by the client.
+		//What to do if you do not have a free worker process?
+		System.out.println("DISTAPP : processResult : " + rc + ":" + path + ":" + ctx);
+		for(String c: children)
+		{
+			System.out.println(c);
+			try
+			{
+				//TODO There is quite a bit of worker specific activities here,
+				// that should be moved done by a process function as the worker.
+
+				//TODO!! This is not a good approach, you should get the data using an async version of the API.
+				
+
+				// Store it inside the result node.
+				zk.create("/dist07/assigns/"+worker, c, Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+				//zk.create("/distXX/tasks/"+c+"/result", ("Hello from "+pinfo).getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+			}
+			catch(NodeExistsException nee){System.out.println(nee);}
+			catch(KeeperException ke){System.out.println(ke);}
+			catch(InterruptedException ie){System.out.println(ie);}
+			catch(IOException io){System.out.println(io);}
+			catch(ClassNotFoundException cne){System.out.println(cne);}
+		}
+	}
 	//Asynchronous callback that is invoked by the zk.getChildren request.
 	public void processResult(int rc, String path, Object ctx, List<String> children)
 	{
@@ -173,8 +273,18 @@ public class DistProcess implements Watcher
 		//Read the ZooKeeper ensemble information from the environment variable.
 		DistProcess dt = new DistProcess(System.getenv("ZKSERVER"));
 		dt.startProcess();
-
 		//Replace this with an approach that will make sure that the process is up and running forever.
-		Thread.sleep(10000); 
+		Thread.sleep(10000);
+		if(this.isMaster){
+			dt.zk.delete("/dist07/master", -1, null, null);
+			dt.zk.delete("/dist07/assigns",-1,null,null);
+			dt.zk.delete("/dist07/workers",-1,null,null);
+			dt.zk.delete("/dist07/tasks",-1,null,null);
+			dt.zk.delete("/dist07",-1,null,null);
+		}else{
+			dt.zk.delete(this.name, -1, null, null);
+			dt.zk.delete(this.name.replace("workers", "assigns"), -1, null, null);
+		}
+		dt.zk.close()
 	}
 }
