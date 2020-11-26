@@ -33,8 +33,9 @@ public class DistProcess implements Watcher
 	String zkServer, pinfo;
 	boolean isMaster=false;
 	String name;
-	Vector<String> workerlist;
-	Vector<String> tasklist;
+	Vector<String> workerList = new Vector<>();
+	Vector<String> taskList = new Vector<>();
+
 	DistProcess(String zkhost)
 	{
 		zkServer=zkhost;
@@ -74,6 +75,7 @@ public class DistProcess implements Watcher
             }
         }
     };
+
     Watcher newWorkerWatcher = new Watcher(){
 		@Override
         public void process(WatchedEvent e) {
@@ -125,6 +127,7 @@ public class DistProcess implements Watcher
 			}
 		}
 	};
+
 	ChildrenCallback workersGetChildrenCallback = new ChildrenCallback() {
 		@Override
         public void processResult(int rc, String path, Object ctx, List<String> children){
@@ -132,8 +135,9 @@ public class DistProcess implements Watcher
 			for(String c: children)
 			{
 				System.out.println(c);
-				if(!this.workerlist.contains(c)) {
-					this.add(c);
+				if(!workerList.contains(c)) {
+					workerList.add(c);
+					//this.add(c);
 				}
 			}
 		}
@@ -165,6 +169,7 @@ public class DistProcess implements Watcher
 			}
 		}
 	};
+
 	VoidCallback deleteCallback = new VoidCallback() {
 		@Override
         public void processResult(int rc, String path, Object ctx){
@@ -239,13 +244,13 @@ public class DistProcess implements Watcher
 		//		The worker must invoke the "compute" function of the Task send by the client.
 		//What to do if you do not have a free worker process?
 		System.out.println("DISTAPP : processResult : " + rc + ":" + path + ":" + ctx);
-		Vector<String> diff;
-		if(tasklist == null) {
-			tasklist = new Vector(children);
-			diff = tasklist;
+		Vector<String> diff = null;
+		if(taskList == null) {
+			taskList = new Vector(children);
+			diff = taskList;
 		}else {
 			for(String c: children) {
-				if(!tasklist.contains(c)) {
+				if(!taskList.contains(c)) {
 					if(diff == null) {
                         diff = new Vector<String>();
                     }
@@ -253,7 +258,7 @@ public class DistProcess implements Watcher
 				}
 			}
 		}
-		tasklist = new Vector(children);
+		taskList = new Vector(children);
 		for(String c: diff)
 		{
 			System.out.println(c);
@@ -263,21 +268,18 @@ public class DistProcess implements Watcher
 				// that should be moved done by a process function as the worker.
 
 				//TODO!! This is not a good approach, you should get the data using an async version of the API.
-				while(workerlist.size() == 0) {
+				while(workerList.size() == 0) {
 					TimeUnit.SECONDS.sleep(1);
 				}
-				int i = new Random().nextInt(workerlist.size());
-				String worker = workerlist.get(i).split("/")[3];
+				int i = new Random().nextInt(workerList.size());
+				String worker = workerList.get(i).split("/")[3];
 				// Store it inside the result node.
-				workerlist.remove(i);
+				workerList.remove(i);
 				zk.delete("/dist07/workers/"+worker,-1,deleteCallback,c);
 				//zk.create("/distXX/tasks/"+c+"/result", ("Hello from "+pinfo).getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+			} catch (InterruptedException e) {
+				e.printStackTrace();
 			}
-			catch(NodeExistsException nee){System.out.println(nee);}
-			catch(KeeperException ke){System.out.println(ke);}
-			catch(InterruptedException ie){System.out.println(ie);}
-			catch(IOException io){System.out.println(io);}
-			catch(ClassNotFoundException cne){System.out.println(cne);}
 		}
 	}
 
