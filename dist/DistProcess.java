@@ -12,7 +12,7 @@ import org.apache.zookeeper.*;
 import org.apache.zookeeper.ZooDefs.Ids;
 import org.apache.zookeeper.KeeperException.*;
 import org.apache.zookeeper.data.*;
-import org.apache.zookeeper.KeeperException.Code;
+import org.apache.zookeeper.Watcher.Event.EventType;
 
 // TODO
 // Replace XX with your group number.
@@ -54,12 +54,13 @@ public class DistProcess implements Watcher
 		{ 
 			runForWorker();
 			this.isMaster=false; 
-			getAssignedTask()
+			getAssignedTask();
 			
 		} // TODO: What else will you need if this was a worker process?
 
 		System.out.println("DISTAPP : Role : " + " I will be functioning as " +(isMaster?"master":"worker"));
 	}
+
 	Watcher newAssignedTaskWatcher = new Watcher(){
         public void process(WatchedEvent e) {
             if(e.getType() == EventType.NodeChildrenChanged) {
@@ -69,6 +70,7 @@ public class DistProcess implements Watcher
             }
         }
     };
+
 	// Master fetching task znodes...
 	void getTasks()
 	{
@@ -78,6 +80,7 @@ public class DistProcess implements Watcher
 	{
 		zk.getChildren(this.name,newAssignedTaskWatcher, tasksGetChildrenCallback, null);  
 	}
+
 	ChildrenCallback tasksGetChildrenCallback = new ChildrenCallback() {
         public void processResult(int rc, String path, Object ctx, List<String> children){
 			System.out.println("DISTAPP : processResult : " + rc + ":" + path + ":" + ctx);
@@ -90,12 +93,12 @@ public class DistProcess implements Watcher
 					// that should be moved done by a process function as the worker.
 
 					//TODO!! This is not a good approach, you should get the data using an async version of the API.
-					zk.getData("/dist07/tasks/"+c, false, null);
+					byte[] taskSerial = zk.getData("/dist07/tasks/"+c, false, null);
 					
 					// Store it inside the result node.
 					zk.create("/dist07/tasks/"+c+"/result", taskSerial, Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
 					zk.create(this.name.replace("workers", "assigns"), pinfo.getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT_SEQUENTIAL);
-					dt.zk.delete(path,-1,null,null);
+					zk.delete(path,-1,null,null);
 					//zk.create("/distXX/tasks/"+c+"/result", ("Hello from "+pinfo).getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
 				}
 				catch(NodeExistsException nee){System.out.println(nee);}
@@ -105,25 +108,31 @@ public class DistProcess implements Watcher
 				catch(ClassNotFoundException cne){System.out.println(cne);}
 			}
 		}
-	}
+	};
+
 	DataCallback taskDataCallback = new DataCallback() {
         public void processResult(int rc, String path, Object ctx, byte[] data, Stat stat){
-			ByteArrayInputStream bis = new ByteArrayInputStream(data);
-			ObjectInput in = new ObjectInputStream(bis);
-			DistTask dt = (DistTask) in.readObject();
+        	try {
+				ByteArrayInputStream bis = new ByteArrayInputStream(data);
+				ObjectInput in = new ObjectInputStream(bis);
+				DistTask dt = (DistTask) in.readObject();
 
 				//Execute the task.
 				//TODO: Again, time consuming stuff. Should be done by some other thread and not inside a callback!
-			dt.compute();
-				
+				dt.compute();
+
 				// Serialize our Task object back to a byte array!
-			ByteArrayOutputStream bos = new ByteArrayOutputStream();
-			ObjectOutputStream oos = new ObjectOutputStream(bos);
-			oos.writeObject(dt); oos.flush();
-			taskSerial = bos.toByteArray();
+				ByteArrayOutputStream bos = new ByteArrayOutputStream();
+				ObjectOutputStream oos = new ObjectOutputStream(bos);
+				oos.writeObject(dt);
+				oos.flush();
+				byte[] taskSerial = bos.toByteArray();
 
 				// Store it inside the result node.
-			zk.create(path+"/result", taskSerial, Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+				zk.create(path + "/result", taskSerial, Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+			} catch (Exception e){
+				System.out.println("...");
+			}
 		}
 	}
 			
@@ -209,6 +218,7 @@ public class DistProcess implements Watcher
 			catch(ClassNotFoundException cne){System.out.println(cne);}
 		}
 	}
+
 	//Asynchronous callback that is invoked by the zk.getChildren request.
 	public void processResult(int rc, String path, Object ctx, List<String> children)
 	{
@@ -275,16 +285,16 @@ public class DistProcess implements Watcher
 		dt.startProcess();
 		//Replace this with an approach that will make sure that the process is up and running forever.
 		Thread.sleep(10000);
-		if(this.isMaster){
+		if(dt.isMaster){
 			dt.zk.delete("/dist07/master", -1, null, null);
 			dt.zk.delete("/dist07/assigns",-1,null,null);
 			dt.zk.delete("/dist07/workers",-1,null,null);
 			dt.zk.delete("/dist07/tasks",-1,null,null);
 			dt.zk.delete("/dist07",-1,null,null);
 		}else{
-			dt.zk.delete(this.name, -1, null, null);
-			dt.zk.delete(this.name.replace("workers", "assigns"), -1, null, null);
+			dt.zk.delete(dt.name, -1, null, null);
+			dt.zk.delete(dt.name.replace("workers", "assigns"), -1, null, null);
 		}
-		dt.zk.close()
+		dt.zk.close();
 	}
 }
