@@ -1,7 +1,7 @@
 import java.io.*;
 
 import java.util.*;
-
+import java.util.concurrent.TimeUnit;
 // To get the name of the host.
 import java.net.*;
 
@@ -33,6 +33,8 @@ public class DistProcess implements Watcher
 	String zkServer, pinfo;
 	boolean isMaster=false;
 	String name;
+	Vector<String> workerlist;
+	Vector<String> tasklist;
 	DistProcess(String zkhost)
 	{
 		zkServer=zkhost;
@@ -48,6 +50,7 @@ public class DistProcess implements Watcher
 		{
 			runForMaster();	// See if you can become the master (i.e, no other master exists)
 			this.isMaster=true;
+			getWorkers();
 			getTasks(); // Install monitoring on any new tasks that will be created.
 									// TODO monitor for worker tasks?
 		}catch(NodeExistsException nee)
@@ -71,6 +74,16 @@ public class DistProcess implements Watcher
             }
         }
     };
+    Watcher newWorkerWatcher = new Watcher(){
+		@Override
+        public void process(WatchedEvent e) {
+            if(e.getType() == EventType.NodeChildrenChanged) {
+                assert new String(name.replace("assign", "workers")).equals( e.getPath() );
+                
+                getWorkers();
+            }
+        }
+    };
 
 	// Master fetching task znodes...
 	void getTasks()
@@ -80,6 +93,10 @@ public class DistProcess implements Watcher
 	void getAssignedTask()
 	{
 		zk.getChildren(this.name,newAssignedTaskWatcher, tasksGetChildrenCallback, null);  
+	}
+	void getWorkers()
+	{
+		zk.getChildren("/dist07/workers",newWorkerWatcher ,workersGetChildrenCallback , null);  
 	}
 
 	ChildrenCallback tasksGetChildrenCallback = new ChildrenCallback() {
@@ -99,12 +116,25 @@ public class DistProcess implements Watcher
 					
 					// Store it inside the result node.
 					zk.create(name.replace("assign", "workers"), pinfo.getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT_SEQUENTIAL);
-					zk.delete(path,-1,null,null);
+					zk.delete(path+'/'+c,-1,null,null);
 					//zk.create("/distXX/tasks/"+c+"/result", ("Hello from "+pinfo).getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
 				}
 				catch(NodeExistsException nee){System.out.println(nee);}
 				catch(KeeperException ke){System.out.println(ke);}
 				catch(InterruptedException ie){System.out.println(ie);}
+			}
+		}
+	};
+	ChildrenCallback workersGetChildrenCallback = new ChildrenCallback() {
+		@Override
+        public void processResult(int rc, String path, Object ctx, List<String> children){
+			System.out.println("DISTAPP : processResult : " + rc + ":" + path + ":" + ctx);
+			for(String c: children)
+			{
+				System.out.println(c);
+				if(!this.workerlist.contains(c)) {
+					this.add(c);
+				}
 			}
 		}
 	};
@@ -135,6 +165,16 @@ public class DistProcess implements Watcher
 			}
 		}
 	};
+	VoidCallback deleteCallback = new VoidCallback() {
+		@Override
+        public void processResult(int rc, String path, Object ctx){
+        	try {
+        		zk.create(path.replace("workers", "assign")+"/"+ctx,new byte[0], Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+			} catch (Exception e){
+				System.out.println("...");
+			}
+		}
+	};
 			
 	// Try to become the master.
 	void runForMaster() throws UnknownHostException, KeeperException, InterruptedException
@@ -153,7 +193,7 @@ public class DistProcess implements Watcher
 		//Try to create an ephemeral node to be the master, put the hostname and pid of this process as the data.
 		// This is an example of Synchronous API invocation as the function waits for the execution and no callback is involved..
 			this.name = zk.create("/dist07/assign/worker-", pinfo.getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT_SEQUENTIAL);
-			zk.create(this.name.replace("assign", "workers"), pinfo.getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT_SEQUENTIAL);
+			zk.create(this.name.replace("assign", "workers"), pinfo.getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
 	}
 	
 	@Override
@@ -199,7 +239,22 @@ public class DistProcess implements Watcher
 		//		The worker must invoke the "compute" function of the Task send by the client.
 		//What to do if you do not have a free worker process?
 		System.out.println("DISTAPP : processResult : " + rc + ":" + path + ":" + ctx);
-		for(String c: children)
+		Vector<String> diff;
+		if(tasklist == null) {
+			tasklist = new Vector(children);
+			diff = tasklist;
+		}else {
+			for(String c: children) {
+				if(!tasklist.contains(c)) {
+					if(diff == null) {
+                        diff = new Vector<String>();
+                    }
+					diff.add(c);
+				}
+			}
+		}
+		tasklist = new Vector(children);
+		for(String c: diff)
 		{
 			System.out.println(c);
 			try
@@ -208,10 +263,14 @@ public class DistProcess implements Watcher
 				// that should be moved done by a process function as the worker.
 
 				//TODO!! This is not a good approach, you should get the data using an async version of the API.
-				
-
+				while(workerlist.size() == 0) {
+					TimeUnit.SECONDS.sleep(1);
+				}
+				int i = new Random().nextInt(workerlist.size());
+				String worker = workerlist.get(i).split("/")[3];
 				// Store it inside the result node.
-				zk.create("/dist07/assign/"+worker, c, Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+				workerlist.remove(i);
+				zk.delete("/dist07/workers/"+worker,-1,deleteCallback,c);
 				//zk.create("/distXX/tasks/"+c+"/result", ("Hello from "+pinfo).getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
 			}
 			catch(NodeExistsException nee){System.out.println(nee);}
