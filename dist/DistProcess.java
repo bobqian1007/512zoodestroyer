@@ -64,7 +64,7 @@ public class DistProcess implements Watcher
 	Watcher newAssignedTaskWatcher = new Watcher(){
         public void process(WatchedEvent e) {
             if(e.getType() == EventType.NodeChildrenChanged) {
-                assert new String(this.name).equals( e.getPath() );
+                assert new String(name).equals( e.getPath() );
                 
                 getAssignedTask();
             }
@@ -97,15 +97,13 @@ public class DistProcess implements Watcher
 					
 					// Store it inside the result node.
 					zk.create("/dist07/tasks/"+c+"/result", taskSerial, Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
-					zk.create(this.name.replace("workers", "assigns"), pinfo.getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT_SEQUENTIAL);
+					zk.create(name.replace("workers", "assigns"), pinfo.getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT_SEQUENTIAL);
 					zk.delete(path,-1,null,null);
 					//zk.create("/distXX/tasks/"+c+"/result", ("Hello from "+pinfo).getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
 				}
 				catch(NodeExistsException nee){System.out.println(nee);}
 				catch(KeeperException ke){System.out.println(ke);}
 				catch(InterruptedException ie){System.out.println(ie);}
-				catch(IOException io){System.out.println(io);}
-				catch(ClassNotFoundException cne){System.out.println(cne);}
 			}
 		}
 	};
@@ -134,7 +132,7 @@ public class DistProcess implements Watcher
 				System.out.println("...");
 			}
 		}
-	}
+	};
 			
 	// Try to become the master.
 	void runForMaster() throws UnknownHostException, KeeperException, InterruptedException
