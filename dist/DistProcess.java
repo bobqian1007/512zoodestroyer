@@ -62,6 +62,7 @@ public class DistProcess implements Watcher
 	}
 
 	Watcher newAssignedTaskWatcher = new Watcher(){
+		@Override
         public void process(WatchedEvent e) {
             if(e.getType() == EventType.NodeChildrenChanged) {
                 assert new String(name).equals( e.getPath() );
@@ -82,6 +83,7 @@ public class DistProcess implements Watcher
 	}
 
 	ChildrenCallback tasksGetChildrenCallback = new ChildrenCallback() {
+		@Override
         public void processResult(int rc, String path, Object ctx, List<String> children){
 			System.out.println("DISTAPP : processResult : " + rc + ":" + path + ":" + ctx);
 			for(String c: children)
@@ -93,10 +95,9 @@ public class DistProcess implements Watcher
 					// that should be moved done by a process function as the worker.
 
 					//TODO!! This is not a good approach, you should get the data using an async version of the API.
-					byte[] taskSerial = zk.getData("/dist07/tasks/"+c, false, null);
+					zk.getData("/dist07/tasks/"+c, false, taskDataCallback,c);
 					
 					// Store it inside the result node.
-					zk.create("/dist07/tasks/"+c+"/result", taskSerial, Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
 					zk.create(name.replace("workers", "assigns"), pinfo.getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT_SEQUENTIAL);
 					zk.delete(path,-1,null,null);
 					//zk.create("/distXX/tasks/"+c+"/result", ("Hello from "+pinfo).getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
@@ -109,6 +110,7 @@ public class DistProcess implements Watcher
 	};
 
 	DataCallback taskDataCallback = new DataCallback() {
+		@Override
         public void processResult(int rc, String path, Object ctx, byte[] data, Stat stat){
         	try {
 				ByteArrayInputStream bis = new ByteArrayInputStream(data);
@@ -145,6 +147,7 @@ public class DistProcess implements Watcher
 		zk.create("/dist07/assigns", new byte[0], Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
 		zk.create("/dist07/master", pinfo.getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
 	}
+
 	void runForWorker() throws UnknownHostException, KeeperException, InterruptedException
 	{
 		//Try to create an ephemeral node to be the master, put the hostname and pid of this process as the data.
@@ -153,7 +156,7 @@ public class DistProcess implements Watcher
 			zk.create(this.name.replace("workers", "assigns"), pinfo.getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT_SEQUENTIAL);
 	}
 	
-
+	@Override
 	public void process(WatchedEvent e)
 	{
 		//Get watcher notifications.
@@ -175,6 +178,8 @@ public class DistProcess implements Watcher
 			getTasks();
 		}
 	}
+
+	@Override
 	public void processResult(int rc, String path, Object ctx, List<String> children)
 	{
 
@@ -217,6 +222,7 @@ public class DistProcess implements Watcher
 		}
 	}
 
+	@Override
 	//Asynchronous callback that is invoked by the zk.getChildren request.
 	public void processResult(int rc, String path, Object ctx, List<String> children)
 	{
