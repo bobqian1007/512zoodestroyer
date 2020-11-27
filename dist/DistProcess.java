@@ -35,6 +35,7 @@ public class DistProcess implements Watcher, ChildrenCallback
 	String name;
 	Vector<String> workerList = new Vector<>();
 	Vector<String> taskList;
+	boolean STOP = false;
 
 	DistProcess(String zkhost)
 	{
@@ -85,7 +86,7 @@ public class DistProcess implements Watcher, ChildrenCallback
             if(e.getType() == EventType.NodeChildrenChanged) {
                 assert new String("/dist07/workers").equals( e.getPath() );
                 
-                getWorkers();
+                // getWorkers();
             }
         }
     };
@@ -102,7 +103,8 @@ public class DistProcess implements Watcher, ChildrenCallback
 	// Master fetching worker znodes...
 	void getWorkers(String c)
 	{
-		zk.getChildren("/dist07/workers", newWorkerWatcher, workersGetChildrenCallback, c);
+		// zk.getChildren("/dist07/workers", newWorkerWatcher, workersGetChildrenCallback, c);
+		zk.getChildren("/dist07/workers", null, workersGetChildrenCallback, c);
 	}
 
 	ChildrenCallback assignedTasksGetChildrenCallback = new ChildrenCallback() {
@@ -136,12 +138,12 @@ public class DistProcess implements Watcher, ChildrenCallback
 			System.out.println("workersGetChildrenCallback");
 			System.out.println("DISTAPP : processResult : " + rc + ":" + path + ":" + ctx);
 			if(children == null || children.size() == 0) {
-				getWorker(ctx);
+				getWorkers((String) ctx);
 				return;
 			}
-			int i = new Random().nextInt(workerList.size());
-			String worker = workerList.get(i);
-			zk.delete("/dist07/workers/"+worker,-1, deleteCallback, c);
+			int i = new Random().nextInt(children.size());
+			String worker = children.get(i);
+			zk.delete("/dist07/workers/"+worker,-1, deleteCallback, ctx);
 			
 		}
 	};
@@ -248,6 +250,15 @@ public class DistProcess implements Watcher, ChildrenCallback
 		//		The worker must invoke the "compute" function of the Task send by the client.
 		//What to do if you do not have a free worker process?
 		System.out.println("DISTAPP : processResult : " + rc + ":" + path + ":" + ctx);
+//		if(children == null || children.size() == 0) {
+//			try {
+//				Thread.sleep(10000);
+//				STOP = true;
+//				return;
+//			} catch (InterruptedException e) {
+//				e.printStackTrace();
+//			}
+//		}
 		Vector<String> diff = new Vector<String>();
 		if(taskList == null) {
 			taskList = new Vector<String>(children);
@@ -272,7 +283,7 @@ public class DistProcess implements Watcher, ChildrenCallback
 				// that should be moved done by a process function as the worker.
 
 				//TODO!! This is not a good approach, you should get the data using an async version of the API.
-			getWorkers(c);
+				getWorkers(c);
 				//zk.create("/distXX/tasks/"+c+"/result", ("Hello from "+pinfo).getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
 			} catch (Exception e) {
 				e.printStackTrace();
@@ -352,7 +363,7 @@ public class DistProcess implements Watcher, ChildrenCallback
 
 			int threadNum = Thread.getAllStackTraces().keySet().size();
 			while (threadNum > 1){
-				System.out.println("Thread num: " + threadNum);
+				// System.out.println("Thread num: " + threadNum);
 				Thread.sleep(3000);
 				threadNum = Thread.getAllStackTraces().keySet().size();
 			}
