@@ -102,6 +102,7 @@ public class DistProcess implements Watcher, ChildrenCallback
 	// Master fetching worker znodes...
 	void getWorkers()
 	{
+		System.out.println("get workers");
 		zk.getChildren("/dist07/workers", newWorkerWatcher, workersGetChildrenCallback, null);
 	}
 
@@ -280,6 +281,11 @@ public class DistProcess implements Watcher, ChildrenCallback
 				while(workerList.size() == 0) {
 					System.out.println("Worker list empty");
 					TimeUnit.SECONDS.sleep(1);
+					// getWorkers();
+					List<String> workers = zk.getChildren("/dist07/workers", false);
+					if(workers != null){
+						workerList = new Vector<>(workers);
+					}
 				}
 				int i = new Random().nextInt(workerList.size());
 				String worker = workerList.get(i).split("/")[0];
