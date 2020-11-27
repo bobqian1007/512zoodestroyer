@@ -112,10 +112,12 @@ public class DistProcess implements Watcher, AsyncCallback.ChildrenCallback
 				{
 					//TODO!! This is not a good approach, you should get the data using an async version of the API.
 					zk.getData("/dist07/tasks/"+c, false, taskDataCallback,c);
-					
+					System.out.println("/dist07/tasks/"+c+": get data successfully.");
 					// Store it inside the result node.
 					zk.create(name.replace("assign", "workers"), pinfo.getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+					System.out.println("/dist07/tasks/"+c+": task is assigned to worker-");
 					zk.delete(path+'/'+c,-1,null,null);
+
 					//zk.create("/distXX/tasks/"+c+"/result", ("Hello from "+pinfo).getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
 				}
 				catch(NodeExistsException nee){System.out.println(nee);}
@@ -129,6 +131,9 @@ public class DistProcess implements Watcher, AsyncCallback.ChildrenCallback
 		@Override
         public void processResult(int rc, String path, Object ctx, List<String> children){
 			System.out.println("DISTAPP : processResult : " + rc + ":" + path + ":" + ctx);
+			if (children == null){
+				System.out.println("children under "+ path + " is null");
+			}
 			for(String c: children)
 			{
 				System.out.println(c);
@@ -151,7 +156,7 @@ public class DistProcess implements Watcher, AsyncCallback.ChildrenCallback
 				//Execute the task.
 				//TODO: Again, time consuming stuff. Should be done by some other thread and not inside a callback!
 				dt.compute();
-
+				System.out.println("task computation finished");
 				// Serialize our Task object back to a byte array!
 				ByteArrayOutputStream bos = new ByteArrayOutputStream();
 				ObjectOutputStream oos = new ObjectOutputStream(bos);
@@ -161,8 +166,9 @@ public class DistProcess implements Watcher, AsyncCallback.ChildrenCallback
 
 				// Store it inside the result node.
 				zk.create(path + "/result", taskSerial, Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+				System.out.println("task result is stored here: "+ path + "/result");
 			} catch (Exception e){
-				System.out.println("...");
+				System.out.println("computing task...");
 			}
 		}
 	};
@@ -173,7 +179,7 @@ public class DistProcess implements Watcher, AsyncCallback.ChildrenCallback
         	try {
         		zk.create(path.replace("workers", "assign")+"/"+ctx, new byte[0], Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
 			} catch (Exception e){
-				System.out.println("...");
+				System.out.println("deleting"+path.replace("workers", "assign")+"/"+ctx+"...");
 			}
 		}
 	};
@@ -184,10 +190,15 @@ public class DistProcess implements Watcher, AsyncCallback.ChildrenCallback
 		//Try to create an ephemeral node to be the master, put the hostname and pid of this process as the data.
 		// This is an example of Synchronous API invocation as the function waits for the execution and no callback is involved..
 		zk.create("/dist07", new byte[0], Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+		System.out.println("/dist07 created");
 		zk.create("/dist07/tasks", new byte[0], Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+		System.out.println("/dist07/tasks created");
 		zk.create("/dist07/workers", new byte[0], Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+		System.out.println("/dist07/workers created");
 		zk.create("/dist07/assign", new byte[0], Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+		System.out.println("/dist07/assign created");
 		zk.create("/dist07/master", pinfo.getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
+		System.out.println("/dist07/master created\n");
 	}
 
 	void runForWorker() throws UnknownHostException, KeeperException, InterruptedException
