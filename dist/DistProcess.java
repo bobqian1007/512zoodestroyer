@@ -53,7 +53,7 @@ public class DistProcess implements Watcher, ChildrenCallback
 		{
 			runForMaster();	// See if you can become the master (i.e, no other master exists)
 			this.isMaster=true;
-			getWorkers(); // Install monitoring on any new workers that will be created.
+			//getWorkers(); // Install monitoring on any new workers that will be created.
 			getTasks(); // Install monitoring on any new tasks that will be created.
 									// TODO monitor for worker tasks?
 		}catch(NodeExistsException nee)
@@ -100,9 +100,9 @@ public class DistProcess implements Watcher, ChildrenCallback
 		zk.getChildren(this.name, newAssignedTaskWatcher, assignedTasksGetChildrenCallback, null);
 	}
 	// Master fetching worker znodes...
-	void getWorkers()
+	void getWorkers(String c)
 	{
-		zk.getChildren("/dist07/workers", newWorkerWatcher, workersGetChildrenCallback, null);
+		zk.getChildren("/dist07/workers", newWorkerWatcher, workersGetChildrenCallback, c);
 	}
 
 	ChildrenCallback assignedTasksGetChildrenCallback = new ChildrenCallback() {
@@ -135,19 +135,14 @@ public class DistProcess implements Watcher, ChildrenCallback
         public void processResult(int rc, String path, Object ctx, List<String> children){
 			System.out.println("workersGetChildrenCallback");
 			System.out.println("DISTAPP : processResult : " + rc + ":" + path + ":" + ctx);
-			if(children == null || children.size() == 0) return;
-			workerList.clear();
-//			for(String c: children)
-//			{
-//				System.out.println("Worker: "+c);
-//				if(!workerList.contains(c)) {
-//					workerList.add(c);
-//					//this.add(c);
-//				}
-//			}
-			workerList.addAll(children);
-			// workerList = new Vector<String>(children);
-			System.out.println("new worker added " + Arrays.toString(children.toArray()));
+			if(children == null || children.size() == 0) {
+				getWorker(ctx);
+				return;
+			}
+			int i = new Random().nextInt(workerList.size());
+			String worker = workerList.get(i);
+			zk.delete("/dist07/workers/"+worker,-1, deleteCallback, c);
+			
 		}
 	};
 
@@ -277,15 +272,7 @@ public class DistProcess implements Watcher, ChildrenCallback
 				// that should be moved done by a process function as the worker.
 
 				//TODO!! This is not a good approach, you should get the data using an async version of the API.
-				while(workerList.size() == 0) {
-					System.out.println("Worker list empty");
-					TimeUnit.SECONDS.sleep(1);
-				}
-				int i = new Random().nextInt(workerList.size());
-				String worker = workerList.get(i).split("/")[0];
-				// Store it inside the result node.
-				workerList.remove(i);
-				zk.delete("/dist07/workers/"+worker,-1, deleteCallback, c);
+			getWorkers(c);
 				//zk.create("/distXX/tasks/"+c+"/result", ("Hello from "+pinfo).getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
 			} catch (Exception e) {
 				e.printStackTrace();
