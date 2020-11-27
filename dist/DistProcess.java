@@ -45,12 +45,12 @@ public class DistProcess implements Watcher, AsyncCallback.ChildrenCallback
 
 	void startProcess() throws IOException, UnknownHostException, KeeperException, InterruptedException
 	{
-		zk = new ZooKeeper(zkServer, 17000000, this); //connect to ZK.
+		zk = new ZooKeeper(zkServer, 1700000, this); //connect to ZK.
 		try
 		{
 			runForMaster();	// See if you can become the master (i.e, no other master exists)
 			this.isMaster=true;
-			getWorkers();
+			getWorkers(); // Install monitoring on any new workers that will be created.
 			getTasks(); // Install monitoring on any new tasks that will be created.
 									// TODO monitor for worker tasks?
 		}catch(NodeExistsException nee)
@@ -93,14 +93,15 @@ public class DistProcess implements Watcher, AsyncCallback.ChildrenCallback
 	}
 	void getAssignedTask()
 	{
-		zk.getChildren(this.name, newAssignedTaskWatcher, tasksGetChildrenCallback, null);
+		zk.getChildren(this.name, newAssignedTaskWatcher, assignedTasksGetChildrenCallback, null);
 	}
+	// Master fetching worker znodes...
 	void getWorkers()
 	{
 		zk.getChildren("/dist07/workers", newWorkerWatcher, workersGetChildrenCallback, null);
 	}
 
-	ChildrenCallback tasksGetChildrenCallback = new ChildrenCallback() {
+	ChildrenCallback assignedTasksGetChildrenCallback = new ChildrenCallback() {
 		@Override
         public void processResult(int rc, String path, Object ctx, List<String> children){
 			System.out.println("DISTAPP : processResult : " + rc + ":" + path + ":" + ctx);
@@ -109,9 +110,6 @@ public class DistProcess implements Watcher, AsyncCallback.ChildrenCallback
 				System.out.println(c);
 				try
 				{
-					//TODO There is quite a bit of worker specific activities here,
-					// that should be moved done by a process function as the worker.
-
 					//TODO!! This is not a good approach, you should get the data using an async version of the API.
 					zk.getData("/dist07/tasks/"+c, false, taskDataCallback,c);
 					
@@ -196,8 +194,9 @@ public class DistProcess implements Watcher, AsyncCallback.ChildrenCallback
 	{
 		//Try to create an ephemeral node to be the master, put the hostname and pid of this process as the data.
 		// This is an example of Synchronous API invocation as the function waits for the execution and no callback is involved..
-			this.name = zk.create("/dist07/assign/worker-", pinfo.getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT_SEQUENTIAL);
-			zk.create(this.name.replace("assign", "workers"), pinfo.getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+		this.name = zk.create("/dist07/assign/worker-", pinfo.getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT_SEQUENTIAL);
+		zk.create(this.name.replace("assign", "workers"), pinfo.getBytes(), Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+		System.out.println("Worker: " + this.name + " created.");
 	}
 	
 	@Override
@@ -257,7 +256,7 @@ public class DistProcess implements Watcher, AsyncCallback.ChildrenCallback
 				}
 			}
 		}
-		// taskList = new Vector(children);
+		taskList = new Vector<String>(children);
 		for(String c: diff)
 		{
 			System.out.println("current task:" + c);
@@ -350,6 +349,9 @@ public class DistProcess implements Watcher, AsyncCallback.ChildrenCallback
 		//Replace this with an approach that will make sure that the process is up and running forever.
 		Thread.sleep(10000);
 		if(dt.isMaster){
+			while(!dt.workerList.isEmpty()){
+				TimeUnit.SECONDS.sleep(1);
+			}
 			dt.zk.delete("/dist07/master", -1, null, null);
 			dt.zk.delete("/dist07/assign",-1,null,null);
 			dt.zk.delete("/dist07/workers",-1,null,null);
